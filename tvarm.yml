@@ -1,0 +1,85 @@
+esphome:
+  name: tvarm
+esp8266:
+  board: d1_mini
+  framework:
+    version: recommended
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+ota:
+  safe_mode: true
+  password: !secret ota_password
+
+mqtt:
+  broker: !secret mqtt_broker_ip
+
+api:
+
+logger:
+
+switch:
+  - platform: gpio
+    pin: D0
+    name: "TV arm expand (manual)"
+    id: "in2_expand"
+    restore_mode: always_off
+  - platform: gpio
+    pin: D5
+    name: "TV arm retract (manual)"
+    id: "in1_retract"
+    restore_mode: always_off
+sensor:
+  - platform: adc
+    device_class: current #0.015~ 0.020 @ 0.11A ; 0.19 @ 1A ; 1.01 1.06 : 0.15 0.18V
+    pin: A0
+    name: "TV arm current"
+    id: "tvarm_current"
+    unit_of_measurement: A
+    update_interval: 50ms
+    filters:
+    - sliding_window_moving_average:
+        window_size: 10
+        send_every: 20
+    - multiply: 6.6
+cover:
+  - platform: current_based
+    name: "TV arm"
+    id: "tvarm_arm"
+
+    open_sensor: tvarm_current
+    open_moving_current_threshold: 0.2
+    open_obstacle_current_threshold: 1.3
+    open_duration: 120s
+    open_action:
+      - switch.turn_on: in2_expand
+
+    close_sensor: tvarm_current
+    close_moving_current_threshold: 0.2
+    close_obstacle_current_threshold: 1.2
+    close_duration: 120s
+    close_action:
+      - switch.turn_on: in1_retract
+
+    stop_action:
+      - switch.turn_off: in2_expand
+      - switch.turn_off: in1_retract
+
+    obstacle_rollback: 1%
+    start_sensing_delay: 1s
+    malfunction_detection: False
+
+binary_sensor:
+  - platform: gpio
+    pin: D6
+    id: "tvarm_physwitch_retract"
+    on_press:
+      then:
+        - cover.close: tvarm_arm
+  - platform: gpio
+    pin: D1
+    id: "tvarm_physwitch_expand"
+    on_press:
+      then:
+        - cover.open: tvarm_arm
