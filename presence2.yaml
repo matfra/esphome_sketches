@@ -1,0 +1,27 @@
+esphome:
+  name: presence-office
+
+esp8266:
+  board: lolin_c3_mini
+
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+ota:
+  safe_mode: true
+  password: !secret ota_password
+
+mqtt:
+  broker: !secret mqtt_broker_ip
+
+api:
+
+logger:
+
+binary_sensor:
+  - platform: gpio
+    pin: 0
+    name: gpio out pin presence
+    device_class: presence
