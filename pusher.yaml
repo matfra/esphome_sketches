@@ -1,0 +1,71 @@
+esphome:
+  name: central_door_controller
+
+esp8266:
+  board: d1_mini
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+ota:
+  safe_mode: true
+  password: !secret ota_password
+
+mqtt:
+  broker: !secret mqtt_broker_ip
+
+api:
+
+logger:
+
+switch:
+- platform: gpio
+  pin: GPIO4
+  interlock: &interlock [open_cover, close_cover]
+  id: open_cover
+- platform: gpio
+  pin: GPIO0
+  interlock: *interlock
+  id: close_cover
+
+output:
+- platform: esp8266_pwm
+  pin: D2 #GPIO4
+  frequency: 35000 Hz
+  id: pwm_open
+- platform: esp8266_pwm
+  pin: D3 #GPIO0
+  frequency: 35000 Hz
+  id: pwm_close
+
+light:
+  - platform: monochromatic
+    output: pwm_close
+    name: slow_close
+  - platform: monochromatic
+    output: pwm_open
+    name: slow_open
+
+cover:
+- platform: time_based
+  name: "central door actuator"
+  id: central_door_actuator
+  open_action:
+    - switch.turn_on: open_cover
+  open_duration: 8s
+  close_action:
+    - switch.turn_on: close_cover
+  close_duration: 10s
+  stop_action:
+    - switch.turn_off: open_cover
+    - switch.turn_off: close_cover
+
+- platform: template
+  name: "central door"
+  id: central_door
+  lambda: return COVER_CLOSED;
+  open_action:
+    - cover.open: central_door_actuator
+    - delay: 8s
+    - cover.close: central_door_actuator
