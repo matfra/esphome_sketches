@@ -1,18 +1,14 @@
 esphome:
-  name: garage-opener-d1
+  name: garage_opener_c3
 
-esp8266:
-  board: d1_mini
-  framework:
-    version: recommended
+esp32:
+  board: lolin_c3_mini
 
 ota:
   safe_mode: true
 # password:
 
 api:
-
-logger:
 
 captive_portal:
 
@@ -28,13 +24,13 @@ wifi:
 switch:
   - platform: gpio
     pin: 
-      number: GPIO0 # to switch 4
+      number: GPIO4 # to switch 1
       inverted: true
     id: remote_bike_manual
     name: "Bike Remote Manual"
     icon: "mdi:bike"
     on_turn_on:
-    - delay: 300ms
+    - delay: 200ms
     - switch.turn_off: remote_bike_manual
   - platform: gpio
     pin: 
@@ -44,7 +40,7 @@ switch:
     name: "Car Remote Manual"
     icon: "mdi:car"
     on_turn_on:
-    - delay: 300ms
+    - delay: 200ms
     - switch.turn_off: remote_car_manual
 button:
   - platform: template
