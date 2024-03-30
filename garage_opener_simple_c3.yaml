@@ -1,0 +1,40 @@
+esphome:
+  name: garage-door-opener
+
+esp32:
+  board: lolin_c3_mini
+
+ota:
+  safe_mode: true
+
+api:
+
+captive_portal:
+
+logger:
+
+web_server:
+  port: 80
+
+wifi:
+  ap:
+    ssid: "Garage Door Opener"
+
+switch:
+  - platform: gpio
+    pin: 
+      number: GPIO3
+      inverted: true
+    id: remote_garage_switch
+    name: "Garage remote switch"
+    icon: "mdi:electric-switch"
+    on_turn_on:
+    - delay: 250ms
+    - switch.turn_off: remote_garage_switch
+button:
+  - platform: template
+    name: Garage door remote
+    id: garage_remote_button
+    icon: "mdi:garage"
+    on_press:
+    - switch.turn_on: remote_garage_switch
