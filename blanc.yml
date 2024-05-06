@@ -1,0 +1,201 @@
+substitutions:
+  devicename: blanc
+  upper_devicename: BLANC
+
+esphome:
+  name: ${devicename}
+#  includes:
+#    - lgtv_uart.h
+
+esp32:
+  board: lolin_c3_mini
+
+api:
+  services:
+    - service: write
+      variables:
+        command: string
+      then:
+        - uart.write:
+            id: lgtv_serial_interface
+            data: !lambda |-
+              std::string str = command;
+              str += "\r";
+              std::vector<uint8_t> vec(str.begin(), str.end());
+              return vec;
+
+logger:
+  baud_rate: 0
+  level: DEBUG
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+ota:
+  safe_mode: true
+  password: !secret ota_password
+
+light:
+  - platform: status_led
+    name: "${devicename} status led"
+    output: statusoutput
+  - platform: neopixelbus
+    variant: WS2812
+    pin: 7
+    num_leds: 1
+    name: "Status LED RGB"
+    id: statusledlight
+    icon: "mdi:led-outline"
+
+output:
+  - platform: template
+    id: statusoutput
+    type: binary
+    write_action:
+      - if:
+          condition:
+             lambda: return state > 0;
+          then:
+            - light.turn_on: 
+                id: statusledlight
+                red: 1.0
+                green: 0.0
+                blue: 0.0
+                brightness: 30%
+          else:
+            - light.turn_on: 
+                id: statusledlight
+                green: 1.0
+                red: 0.0
+                blue: 0.0
+                brightness: 30%
+
+uart:
+  id: lgtv_serial_interface
+  baud_rate: 9600
+  tx_pin: 20
+  rx_pin: 21
+  debug:
+
+switch:
+  - platform: gpio
+    pin:
+      number: GPIO5
+      mode:
+        output: true
+        pulldown: true
+    name: "TV arm relay retract"
+    id: "blanc_relay_retract"
+    restore_mode: always_off
+  - platform: gpio
+    pin:
+      number: GPIO4
+      mode:
+        output: true
+        pulldown: true
+    name: "TV arm relay expand"
+    id: "blanc_relay_expand"
+    restore_mode: always_off
+
+sensor:
+  - platform: adc
+    device_class: current #0.015~ 0.020 @ 0.11A ; 0.19 @ 1A ; 1.01 1.06 : 0.15 0.18V
+    pin: GPIO1
+    name: "TV arm current"
+    id: "blanc_tvarm_current"
+    unit_of_measurement: A
+    update_interval: 200ms
+    filters:
+    - sliding_window_moving_average:
+        window_size: 10
+        send_every: 10
+    - multiply: 4.5
+  - platform: adc
+    pin: GPIO3
+    name: "Monitor brightness dial"
+    id: "monitor_brightness_dial"
+    update_interval: 50ms
+    raw: true
+    unit_of_measurement: "%"
+    filters:
+    - sliding_window_moving_average:
+        window_size: 20
+        send_every: 20
+    - lambda: |-
+        if ( x < 500) { return 1 ; }
+        if ( x < 1000) { return 4 ; }
+        if ( x < 1500) { return 8 ; }
+        if ( x < 2000) { return 16 ; }
+        if ( x < 2500) { return 20 ; }
+        if ( x < 3000) { return 40 ; }
+        if ( x < 3500) { return 80 ; }
+        return 100 ;
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO6
+      mode:
+        input: true
+        pulldown: true
+    id: "blanc_button_red"
+    name: "blanc_button_red"
+    on_press:
+      - cover.stop: blanc_tvarm_arm
+
+  - platform: gpio
+    pin:
+      number: GPIO0
+      mode:
+        input: true
+        pulldown: true
+    id: "blanc_button_yellow"
+    name: "blanc_button_yellow"
+
+  - platform: gpio
+    pin:
+      number: GPIO8
+      inverted: true
+    id: "blanc_arm_switch_right"
+    name: "blanc_arm_switch_right"
+    on_press:
+      then:
+        - cover.open: blanc_tvarm_arm
+  - platform: gpio
+    pin:
+      number: GPIO2
+      inverted: true
+    id: "blanc_arm_switch_left"
+    name: "blanc_arm_switch_left"
+    on_press:
+      then:
+        - cover.close: blanc_tvarm_arm
+
+
+cover:
+  - platform: current_based
+    name: "Blanc TV arm"
+    id: "blanc_tvarm_arm"
+
+    open_sensor: blanc_tvarm_current
+    open_moving_current_threshold: 0.2
+    open_obstacle_current_threshold: 1.3
+    open_duration: 85s
+    open_action:
+      - switch.turn_on: blanc_relay_expand
+
+    close_sensor: blanc_tvarm_current
+    close_moving_current_threshold: 0.2
+    close_obstacle_current_threshold: 1.3
+    close_duration: 85s
+    close_action:
+      - switch.turn_on: blanc_relay_retract
+
+    stop_action:
+      - switch.turn_off: blanc_relay_expand
+      - switch.turn_off: blanc_relay_retract
+
+    obstacle_rollback: 3%
+    start_sensing_delay: 2s
+    malfunction_detection: False
