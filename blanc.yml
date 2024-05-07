@@ -1,6 +1,5 @@
 substitutions:
   devicename: blanc
-  upper_devicename: BLANC
 
 esphome:
   name: ${devicename}
@@ -12,6 +11,17 @@ esp32:
 
 api:
   services:
+    - service: brigthness
+      variables:
+        value: int
+      then:
+        - uart.write:
+            id: lgtv_serial_interface
+            data: !lambda |-
+              char output[9];  // Max buffer size (including null terminator)
+              int chars_written = snprintf(output, sizeof(output), "mg 1 %02x\r", value);
+              std::vector<uint8_t> vec(output, output + sizeof(output) - 1);
+              return vec;
     - service: write
       variables:
         command: string
@@ -26,7 +36,7 @@ api:
 
 logger:
   baud_rate: 0
-  level: DEBUG
+  level: INFO
 
 wifi:
   ssid: !secret wifi_ssid
