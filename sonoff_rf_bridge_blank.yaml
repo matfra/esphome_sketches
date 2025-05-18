@@ -1,0 +1,113 @@
+substitutions:
+  name: rf-bridge
+
+esphome:
+  name: ${name}
+
+esp8266:
+  board: esp01_1m
+
+ota:
+  safe_mode: true
+# password:
+
+
+captive_portal:
+
+web_server:
+  port: 80
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${name}"
+
+api:
+  services:
+    - service: send_rf_code
+      variables:
+        sync: int
+        low: int
+        high: int
+        code: int
+      then:
+        - rf_bridge.send_code:
+            sync: !lambda 'return sync;'
+            low: !lambda 'return low;'
+            high: !lambda 'return high;'
+            code: !lambda 'return code;'
+        - rf_bridge.send_code:
+            sync: !lambda 'return sync;'
+            low: !lambda 'return low;'
+            high: !lambda 'return high;'
+            code: !lambda 'return code;'
+        - rf_bridge.send_code:
+            sync: !lambda 'return sync;'
+            low: !lambda 'return low;'
+            high: !lambda 'return high;'
+            code: !lambda 'return code;'
+
+    - service: learn
+      then:
+        - rf_bridge.learn
+
+uart:
+  tx_pin: 1
+  rx_pin: 3
+  baud_rate: 19200
+
+logger:
+  baud_rate: 0
+
+
+rf_bridge:
+  on_code_received:
+    then:
+      - homeassistant.event:
+          event: esphome.rf_code_received
+          data:
+            sync: !lambda 'return format_hex(data.sync);'
+            low: !lambda 'return format_hex(data.low);'
+            high: !lambda 'return format_hex(data.high);'
+            code: !lambda 'return format_hex(data.code);'
+      - lambda: |-
+          if ( data.code == 0x545500) {
+            if ( data.sync < 0x2550) {
+              id(etekb1_on).press();
+              id(etekb1).publish_state(true);
+            } else {
+              id(etekb1_off).press();
+              id(etekb1).publish_state(false);
+            }
+          };
+
+button:
+  - platform: template
+    id: etekb1_on
+    name: etekb1_on
+    on_press:
+      - logger.log: etekb1_on
+  - platform: template
+    id: etekb1_off
+    name: etekb1_off
+    on_press:
+      - logger.log: etekb1_off
+
+switch:
+  - platform: template
+    name: etek-bedroom-1
+    id: etekb1
+    optimistic: true
+    turn_on_action:
+      rf_bridge.send_code:
+        sync: 0x2B72
+        low: 0x0156
+        high: 0x0408
+        code: 5526835
+    turn_off_action:
+      rf_bridge.send_code:
+        sync: 0x254A
+        low: 0x015E
+        high: 0x040E
+        code: 5526844
