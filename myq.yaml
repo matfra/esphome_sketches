@@ -42,6 +42,16 @@ switch:
     on_turn_on:
     - delay: 300ms
     - switch.turn_off: remote_workshop_manual
+  - platform: template
+    id: remote_both_garage_doors
+    name: Virtual button for both garage doors
+    turn_on_action:
+      - switch.turn_on: remote_workshop_manual
+      - delay: 1s
+      - switch.turn_on: remote_garage_manual
+      - delay: 1s
+      - switch.turn_off: remote_both_garage_doors
+
 button:
   - platform: template
     name: Workshop door remote
@@ -54,13 +64,13 @@ button:
     name: garage door remote
     id: garage_remote_button
     # Optional variables:
-    icon: mdi:garage"
+    icon: "mdi:garage"
     on_press:
     - switch.turn_on: remote_garage_manual
   - platform: template
-    name: Open both garage doorgarage door remote
-    id: remote_open_both_garage_door
-    icon: mdi:bike"
+    name: Press both garage door buttons
+    id: remote_toggle_both_garage_doors
+    icon: "mdi:bike"
     on_press:
     - switch.turn_on: remote_workshop_manual
     - delay: 1s

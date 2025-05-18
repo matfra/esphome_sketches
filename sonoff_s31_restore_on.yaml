@@ -1,7 +1,7 @@
 # Basic Config
 esphome:
   name: sonoff_s31
-  platform: ESP8266
+  platform: esphome
   board: esp01_1m
 
 wifi:
