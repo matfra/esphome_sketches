@@ -6,16 +6,16 @@ esphome:
 
 esp32:
   board: lolin_c3_mini
-  framework:
-    type: arduino
+#  framework:
+#    type: arduino
 
 logger:
   level: DEBUG
-
-api:
+  baud_rate: 0 # (No need for UART logging)
 
 ota:
-#  safe_mode: true
+  platform: esphome
+  #  safe_mode: true
 # password:
 
 #captive_portal:
@@ -26,10 +26,20 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  ap:
-    ssid: "${name}"
+  output_power: 8.5
 
-
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+    ssid:
+      name: "${device_name} WiFi SSID"
+    bssid:
+      name: "${device_name} Access Point MAC Address"
+sensor:
+  - platform: wifi_signal
+    name: "${device_name} WiFi Signal"
+    update_interval: 60s
 api:
   services:
     - service: send_rf_code_etek
@@ -37,14 +47,14 @@ api:
         rcswitch_code: string
       then:
         - remote_transmitter.transmit_rc_switch_raw:
-            code: !lambda 'return rcswitch_code;'
+            code: !lambda "return rcswitch_code;"
             protocol: 7 #!lambda 'return esphome::remote_base::RC_SWITCH_PROTOCOLS[rcswitch_protocol];'
     - service: send_rf_code_jjx
       variables:
         rcswitch_code: string
       then:
         - remote_transmitter.transmit_rc_switch_raw:
-            code: !lambda 'return rcswitch_code;'
+            code: !lambda "return rcswitch_code;"
             protocol: 1 #!lambda 'return esphome::remote_base::RC_SWITCH_PROTOCOLS[rcswitch_protocol];
 remote_transmitter:
   pin: GPIO10

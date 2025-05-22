@@ -1,0 +1,107 @@
+substitutions:
+  device_name: media-projector-benq # Define the base name for your device
+
+# Basic Config
+esp32:
+  board: lolin_c3_mini
+
+esphome:
+  name: ${device_name}
+  on_boot:
+    priority: -100
+    then:
+      - uart.write: "*pow=?#"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "esphome_${device_name}"
+# Remove the following line if you're not using Home Assistsant or your switch will restart every now and again
+api:
+
+ota:
+  platform: esphome
+
+# Device Specific Config
+
+logger:
+  baud_rate: 0 # (UART logging interferes with cse7766)
+  logs:
+    sensor: INFO # (Overide any global setting, to VERBOSE will spamming the cse7766 sensors)
+
+uart:
+  tx_pin: 10
+  rx_pin: 6
+  baud_rate: 9600
+  parity: EVEN
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+    ssid:
+      name: "${device_name} WiFi SSID"
+    bssid:
+      name: "${device_name} Access Point MAC Address"
+  - platform: template
+    name: "Projector Raw Response"
+    id: projector_response
+    update_interval: 10s
+    on_value:
+      then:
+        - lambda: |-
+            if (x.find("*POW=ON#") != std::string::npos) {
+              id(projector_power_state).publish_state("on");
+            } else if (x.find("*POW=OFF#") != std::string::npos || x.find("*POW=STANDBY#") != std::string::npos) {
+              id(projector_power_state).publish_state("off");
+            }
+  - platform: template
+    name: "Projector Power State"
+    id: projector_power_state
+
+binary_sensor:
+  - platform: template
+    name: "Projector Is On"
+    lambda: |-
+      return id(projector_power_state).state == "on";
+#    update_interval: never
+    on_press:
+      then:
+        - delay: 3s
+        - uart.write: "*appmod=silence#"
+interval:
+  - interval: 10s
+    then:
+      - uart.write: "*pow=?#"
+
+sensor:
+  - platform: wifi_signal
+    name: "${device_name} WiFi Signal"
+    update_interval: 60s
+
+
+switch:
+  - platform: template
+    name: "Projector Power"
+    id: projector_power_switch
+    turn_on_action:
+      - uart.write: "*pow=on#"
+    turn_off_action:
+      - uart.write: "*pow=off#"
+    lambda: |-
+      return id(projector_power_state).state == "on";
+    optimistic: false
+  - platform: template
+    name: "Projector Silence Mode"
+    turn_on_action:
+      - uart.write: "*appmod=silence#"
+    turn_off_action:
+      - uart.write: "*appmod=normal#"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+status_led:
+  pin:
+    number: GPIO8
+

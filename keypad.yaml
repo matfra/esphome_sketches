@@ -1,6 +1,5 @@
 esphome:
   name: keypad
-
 esp8266:
   board: d1_mini
   framework:
@@ -19,18 +18,42 @@ mqtt:
 
 api:
 
-logger:
+# logger:
 
 binary_sensor:
   - platform: gpio
     pin: D0
-    name: "d0"
+    name: "keypad_bottom_left"
   - platform: gpio
     pin: D1
-    name: "d1"
+    name: "keypad_middle_left"
   - platform: gpio
     pin: D2
-    name: "d2"
+    name: "keypad_top_left"
+  - platform: gpio
+    pin: D4
+    name: "keypad_d4"
   - platform: gpio
     pin: D3
-    name: "d3"
+    name: "keypad_d3"
+  - platform: gpio
+    pin: D5
+    name: "keypad_middle_center"
+  - platform: gpio
+    pin: D6
+    name: "keypad_top_center"
+  - platform: gpio
+    pin: D7
+    name: "keypad_bottom_center"
+  - platform: gpio
+    pin: D8
+    name: "keypad_bottom_right"
+  - platform: analog_threshold
+    name: "keypad_middle_right"
+    sensor_id: a0_value
+    threshold: 0.5
+sensor:
+  - platform: adc
+    pin: A0
+    id: "a0_value"
+    update_interval: 100ms

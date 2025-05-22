@@ -1,0 +1,192 @@
+substitutions:
+  device_name: "sw-u8-wall-e" # Define the base name for your device
+
+# Basic Config
+esp8266:
+  board: esp01_1m
+
+esphome:
+  name: ${device_name}
+
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "esphome_${device_name}"
+# Remove the following line if you're not using Home Assistsant or your switch will restart every now and again
+api:
+
+ota:
+  platform: esphome
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+    ssid:
+      name: "${device_name} WiFi SSID"
+    bssid:
+      name: "${device_name} Access Point MAC Address"
+
+# Device Specific Config
+
+logger:
+  baud_rate: 0 # (UART logging interferes with cse7766)
+  logs:
+    sensor: INFO # (Overide any global setting, to VERBOSE will spamming the cse7766 sensors)
+
+uart:
+  rx_pin: RX
+  baud_rate: 4800
+  parity: EVEN
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO0
+      mode: INPUT_PULLUP
+      inverted: True
+    name: "${device_name} Button"
+    on_press:
+      - switch.toggle: relay
+  - platform: status
+    name: "${device_name} Status"
+  - platform: template
+    name: "Heater"
+    id: heater_status
+    device_class: heat # Represents a heater in Home Assistant
+
+sensor:
+  - platform: wifi_signal
+    name: "${device_name} WiFi Signal"
+    update_interval: 60s
+  - platform: cse7766
+    current:
+      name: "${device_name} Current"
+      accuracy_decimals: 2
+      filters:
+        - throttle_average: 10s
+    voltage:
+      name: "${device_name} Voltage"
+      accuracy_decimals: 2
+      filters:
+        - throttle_average: 10s
+    power:
+      name: "${device_name} Power"
+      accuracy_decimals: 2
+      id: power
+      filters:
+        - throttle_average: 10s
+    energy:
+      name: "${device_name} Energy"
+      accuracy_decimals: 2
+      filters:
+        - throttle: 60s
+    apparent_power: #(only available with version 2024.3.0 or greater)
+      name: "${device_name} Apparent Power"
+      filters:
+        - throttle_average: 10s
+    power_factor: #(only available with version 2024.3.0 or greater)
+      name: "${device_name} Power Factor"
+      accuracy_decimals: 2
+      filters:
+        - throttle_average: 10s
+
+  - platform: total_daily_energy #(Optional, not specific to cse7766)
+    name: "${device_name} Daily Energy"
+    power_id: power
+    accuracy_decimals: 2
+
+switch:
+  - platform: gpio
+    name: "${device_name} Relay"
+    pin: GPIO12
+    id: relay
+    restore_mode: RESTORE_DEFAULT_OFF
+
+time:
+  - platform: sntp #(required for total_daily_energy)
+    id: my_time
+
+status_led:
+  pin:
+    number: GPIO13
+    inverted: True
+
+# Configurable Threshold and Timer
+number:
+  - platform: template
+    name: "${device_name} Power Threshold"
+    id: power_threshold
+    unit_of_measurement: "W"
+    min_value: 1
+    max_value: 1500
+    step: 1
+    optimistic: true
+    initial_value: "50"
+
+  - platform: template
+    name: "${device_name} Timer Duration"
+    id: timer_duration
+    unit_of_measurement: "minutes"
+    min_value: 1
+    max_value: 1440
+    step: 1
+    optimistic: true
+    initial_value: "10"
+
+# Globals for tracking shutdown state
+globals:
+  - id: power_exceed_timer
+    type: int
+    restore_value: false
+    initial_value: "0"
+
+  - id: shutdown_threshold
+    type: float
+    restore_value: true
+    initial_value: "1.0"
+
+  - id: shutdown_timer
+    type: int
+    restore_value: true
+    initial_value: "1"
+
+# Regularly check the power consumption and enforce logic
+interval:
+  - interval: 10s
+    then:
+      - lambda: |-
+          if ((int)id(timer_duration).state != id(shutdown_timer)) {
+            ESP_LOGI("config", "Updating shutdown_timer to: %d minutes", (int)id(timer_duration).state);
+            id(shutdown_timer) = (int)id(timer_duration).state;
+          }
+          if ((float)id(power_threshold).state != id(shutdown_threshold)) {
+            ESP_LOGI("config", "Updating shutdown_threshold to: %.2f W", (float)id(power_threshold).state);
+            id(shutdown_threshold) = (float)id(power_threshold).state;
+          }
+  - interval: 10s
+    then:
+      - lambda: |-
+          if (id(power).state > id(shutdown_threshold)) {
+            id(power_exceed_timer) += 10;
+            ESP_LOGD("main", "Incremented timer to %d seconds", id(power_exceed_timer));
+            id(heater_status).publish_state(true);
+          } else {
+            if (id(power_exceed_timer) > 0) {
+              id(power_exceed_timer) = 0;
+              id(heater_status).publish_state(false);
+              ESP_LOGI("main", "Resetting timer.");
+            }
+          }
+
+          int shutdown_timer_sec = id(shutdown_timer) * 60;
+          ESP_LOGD("main", "Shutdown timer is %d seconds", shutdown_timer_sec);
+          if (id(power_exceed_timer) >= id(shutdown_timer) * 60) {
+            ESP_LOGI("main", "Threshold exceeded for too long, turning off outlet...");
+            id(relay).turn_off();
+            id(power_exceed_timer) = 0;  // Reset timer after shutdown
+          }
+
+# TODO: Add a switch for turning back on

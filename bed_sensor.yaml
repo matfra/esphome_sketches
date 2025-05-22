@@ -1,36 +1,60 @@
-esphome:
-  name: bed0
+substitutions:
+  device_name: sensor-bed-master
 
+# Basic Config
+esphome:
+  name: ${device_name}
 esp8266:
   board: d1_mini
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  output_power: 8.5
 
 ota:
-  safe_mode: true
+  platform: esphome
   password: !secret ota_password
-
-mqtt:
-  broker: !secret mqtt_broker_ip
 
 api:
 
 logger:
+  level: INFO
+  baud_rate: 0 # (No need for UART logging)
 
 sensor:
   - platform: hx711
-    name: "bed_presence_window"
+    name: "${device_name} weight"
+    id: bed_presence_window
     dout_pin: D0
     clk_pin: D1
     gain: 64
-    update_interval: 10s
+    update_interval: 5s
     filters:
       - calibrate_linear:
         - 46800 -> 0
-        - 58527 -> 70
+        - 58527 -> 130
+      - lambda: |-
+          if (x < 0.0) return NAN;
+          return x;
+      - sliding_window_moving_average:
+          window_size: 6
+          send_every: 3
+
     unit_of_measurement: kg
+  - platform: wifi_signal
+    name: "${device_name} WiFi Signal"
+    update_interval: 60s
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+    ssid:
+      name: "${device_name} WiFi SSID"
+    bssid:
+      name: "${device_name} Access Point MAC Address"
+
 #  - platform: hx711
 #    name: "bed_presence_wall"
 #    dout_pin: D0
@@ -42,3 +66,51 @@ sensor:
 #        - 9800 -> 0
 #        - 18000 -> 70
 #    unit_of_measurement: kg
+number:
+  - platform: template
+    name: "Bed Presence Threshold"
+    id: bed_presence_threshold
+    min_value: 0.0
+    max_value: 50.0 # Adjust max value as appropriate for your use case
+    step: 1.2
+    unit_of_measurement: "kg"
+    initial_value: 10.0 # Default value for bed presence
+    restore_value: true # Remember the last set value after reboot
+    optimistic: true
+
+  - platform: template
+    name: "Two People Threshold"
+    id: two_people_threshold
+    min_value: 50.0 # Start this higher than the presence threshold
+    max_value: 200.0 # Adjust max value as appropriate
+    step: 1.0
+    unit_of_measurement: "kg"
+    initial_value: 85.0 # Default value for two people
+    restore_value: true # Remember the last set value after reboot
+    optimistic: true
+
+# --- Binary Sensors for Bed Presence Logic ---
+# These will appear as Binary Sensor entities in Home Assis
+binary_sensor:
+  - platform: template
+    name: "Bed Occupied"
+    id: bed_occupied_binary_sensor
+    device_class: occupancy # Use the occupancy device class for better representation
+    lambda: |-
+      // Only evaluate if the total bed weight is a valid number
+      if (isnan(id(bed_presence_window).state)) {
+        return {}; // Return no change if total weight is unknown
+      }
+      // Check if total weight is above the bed presence threshold
+      return id(bed_presence_window).state > id(bed_presence_threshold).state;
+  - platform: template
+    name: "Two People In Bed"
+    id: two_people_in_bed_binary_sensor
+    device_class: occupancy # You can use occupancy or another suitable device class
+    lambda: |-
+      // Only evaluate if the total bed weight is a valid number
+      if (isnan(id(bed_presence_window).state)) {
+        return {}; // Return no change if total weight is unknown
+      }
+      // Check if total weight is above the two people threshold
+      return id(bed_presence_window).state > id(two_people_threshold).state;

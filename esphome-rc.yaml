@@ -1,0 +1,63 @@
+substitutions:
+  device_name: esphome-rc
+
+# Basic Config
+esphome:
+  name: ${device_name}
+esp32:
+  board: lolin_c3_mini
+
+ota:
+  platform: esphome
+
+api:
+
+logger:
+  level: DEBUG
+  baud_rate: 0 # (No need for UART logging)
+
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  output_power: 8.5
+  ap:
+    ssid: "esphome_${device_name}"
+
+mqtt:
+  broker: !secret mqtt_broker_ip
+  id: mqtt_client
+
+remote_receiver:
+  pin:
+    number: GPIO6
+    inverted: true
+    mode:
+      input: true
+      pullup: false
+  dump:
+    - rc_switch
+  tolerance: 60%
+  filter: 250us
+  idle: 4ms
+  rmt_channel: 2
+  buffer_size: 2048
+  on_rc_switch:
+    - lambda: !lambda |-
+        char code[21];
+        sprintf(code, "%llu", x.code);
+        id(mqtt_client).publish("rc", code);
+
+sensor:
+  - platform: wifi_signal
+    name: "${device_name} WiFi Signal"
+    update_interval: 60s
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+    ssid:
+      name: "${device_name} WiFi SSID"
+    bssid:
+      name: "${device_name} Access Point MAC Address"

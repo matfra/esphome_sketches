@@ -1,0 +1,39 @@
+substitutions:
+  device_name: esphome-benq-dev
+
+# Basic Config
+esphome:
+  name: ${device_name}
+
+esp32:
+  board: lolin_c3_mini
+
+ota:
+  platform: esphome
+
+api:
+
+logger:
+  level: VERBOSE #makes uart stream available in esphome logstream
+  baud_rate: 0 #disable logging over uart
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# Enable UART
+uart:
+  tx_pin:
+    number: TX
+    inverted: true
+  rx_pin:
+    number: RX
+    inverted: true
+  baud_rate: 9600
+  parity: EVEN
+  debug:
+
+interval:
+  - interval: 10s
+    then:
+      - uart.write: "\r*pow=off#\r"
