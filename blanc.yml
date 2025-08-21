@@ -3,11 +3,24 @@ substitutions:
 
 esphome:
   name: ${devicename}
+  on_boot:
+    priority: -100
+    then:
+      - light.turn_on:
+          id: statusledlight
+          brightness: 15%
+          red: 0%
+          green: 100%
+          blue: 0%
+      - delay: 10s
+      - light.turn_off: statusledlight
 #  includes:
 #    - lgtv_uart.h
 
 esp32:
   board: lolin_c3_mini
+  framework:
+    type: esp-idf
 
 api:
   services:
@@ -43,50 +56,27 @@ wifi:
   password: !secret wifi_password
 
 ota:
-  safe_mode: true
+  platform: esphome
   password: !secret ota_password
 
 light:
-  - platform: status_led
-    name: "${devicename} status led"
-    output: statusoutput
-  - platform: neopixelbus
-    variant: WS2812
+  - platform: esp32_rmt_led_strip
+    name: "Status LED"
+    rgb_order: GRB
+    chipset: ws2812
     pin: 7
     num_leds: 1
-    name: "Status LED RGB"
     id: statusledlight
     icon: "mdi:led-outline"
 
-output:
-  - platform: template
-    id: statusoutput
-    type: binary
-    write_action:
-      - if:
-          condition:
-             lambda: return state > 0;
-          then:
-            - light.turn_on: 
-                id: statusledlight
-                red: 1.0
-                green: 0.0
-                blue: 0.0
-                brightness: 30%
-          else:
-            - light.turn_on: 
-                id: statusledlight
-                green: 1.0
-                red: 0.0
-                blue: 0.0
-                brightness: 30%
+
 
 uart:
   id: lgtv_serial_interface
   baud_rate: 9600
   tx_pin: 20
   rx_pin: 21
-  debug:
+    # debug:
 
 switch:
   - platform: gpio
@@ -112,10 +102,37 @@ sensor:
   - platform: adc
     device_class: current #0.015~ 0.020 @ 0.11A ; 0.19 @ 1A ; 1.01 1.06 : 0.15 0.18V
     pin: GPIO1
-    name: "TV arm current"
     id: "blanc_tvarm_current"
+    internal: true
     unit_of_measurement: A
     update_interval: 200ms
+    on_value:
+      then:
+        - lambda: |-
+            auto call = id(statusledlight).turn_on();
+            if (id(blanc_relay_expand).state || id(blanc_relay_retract).state) {
+              float r, g, b;
+              b = 0.0;
+              float current = x;
+              if (current > 1.5) { current = 1.5; }
+              if (current < 0) { current = 0; }
+
+              if (current <= 0.75) {
+                r = current / 0.75;
+                g = 1.0;
+              } else {
+                r = 1.0;
+                g = 1.0 - ((current - 0.75) / 0.75) * (1.0 - 0.55);
+              }
+
+              call.set_red(r);
+              call.set_green(g);
+              call.set_blue(b);
+              call.set_brightness(0.40);
+              call.perform();
+            } else {
+              id(statusledlight).turn_off().perform();
+            }
     filters:
     - sliding_window_moving_average:
         window_size: 10
@@ -130,8 +147,8 @@ sensor:
     unit_of_measurement: "%"
     filters:
     - sliding_window_moving_average:
-        window_size: 20
-        send_every: 20
+        window_size: 8
+        send_every: 8
     - lambda: |-
         if ( x < 500) { return 1 ; }
         if ( x < 1000) { return 4 ; }
@@ -190,7 +207,7 @@ cover:
 
     open_sensor: blanc_tvarm_current
     open_moving_current_threshold: 0.2
-    open_obstacle_current_threshold: 1.3
+    open_obstacle_current_threshold: 1.5
     open_duration: 85s
     open_action:
       - switch.turn_on: blanc_relay_expand
