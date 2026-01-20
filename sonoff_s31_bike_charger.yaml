@@ -1,5 +1,5 @@
 substitutions:
-  device_name: "ebike-charger" # Define the base name for your device
+  device_name: "ebike-g1-charger" # Define the base name for your device
 
 # Basic Config
 esp8266:
@@ -135,19 +135,15 @@ number:
     max_value: 100
     step: 1
     optimistic: true
-    initial_value: "75"
+    initial_value: "85"
 
 # Globals for tracking shutdown state
 globals:
+  # Variable where we store the duration we've been exceeding the power target to compare it to the shutdown timer at the next loop
   - id: power_exceed_timer
     type: int
     restore_value: false
-    initial_value: "120"
-
-  - id: shutdown_threshold
-    type: float
-    restore_value: true
-    initial_value: "1.0"
+    initial_value: "120" # Initial value does not matter.
 
   - id: shutdown_timer
     type: int
@@ -157,7 +153,7 @@ globals:
   - id: power_target
     type: int
     restore_value: false
-    initial_value: "110"
+    initial_value: "139" # Above this, we consider the battery has reached its target
 
   - id: charging_threshold # Above 20W, we are charging
     type: int

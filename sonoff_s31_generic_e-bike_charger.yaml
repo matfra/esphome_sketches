@@ -1,6 +1,33 @@
 substitutions:
   device_name: "ebike-g1-charger" # Define the base name for your device
 
+# Global variables hold learned and configured values that persist across reboots.
+globals:
+  - id: peak_power_learned
+    type: float
+    restore_value: yes
+    initial_value: '0.0'
+  - id: charge_session_start_energy
+    type: float
+    restore_value: yes
+    initial_value: '0.0'
+  - id: is_stabilizing
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  # --- New globals to store persistent battery configuration ---
+  - id: battery_nominal_voltage_g
+    type: float
+    restore_value: yes
+    initial_value: '48.0' # Default to 48V, change if needed
+  - id: battery_capacity_ah_g
+    type: float
+    restore_value: yes
+    initial_value: '10.0' # Default to 10Ah, change if needed
+  - id: last_session_percentage_added
+    type: float
+    restore_value: yes
+    initial_value: '0.0'
 
 # Basic Config
 esp8266:
@@ -8,51 +35,6 @@ esp8266:
 
 esphome:
   name: ${device_name}
-# This is where the main logic happens.
-# We use on_value from the power sensor to check the power draw.
-on_value:
-  - sensor.in_range:
-      id: power
-      # Only run the logic when the charger is actively drawing significant power.
-      # This avoids triggering on idle consumption. Adjust 10.0W as needed.
-      above: 10.0
-      then:
-        # This is the "learning" part of the logic.
-        # If the current power is higher than any power we've seen before,
-        # we update our learned peak power.
-        - if:
-            condition:
-              lambda: 'return id(power).state > id(peak_power_learned);'
-            then:
-              - globals.set:
-                  id: peak_power_learned
-                  value: !lambda 'return id(power).state;'
-              - logger.log: "New peak power learned."
-
-        # This is the "shutdown" part of the logic.
-        # We check if the learned peak is a sane value (e.g., > 30W)
-        # AND if the current power has dropped below 95% of that peak.
-        # This drop signifies the end of the main charging phase.
-        - if:
-            condition:
-              and:
-                - lambda: 'return id(peak_power_learned) > 30.0;'
-                - lambda: 'return id(power).state < (id(peak_power_learned) * 0.95);'
-            then:
-              - logger.log: "Charge complete: Power draw has decreased. Turning off."
-              - switch.turn_off: relay
-  # An alternative shutdown logic based on the manual threshold.
-  # This runs in parallel to the primary logic.
-  - sensor.in_range:
-      id: power
-      # Only check if the manual threshold is set to a value greater than 0.
-      # And if the current power drops below it while charging.
-      condition:
-        lambda: 'return id(shutdown_threshold_w).state > 0;'
-      below: !lambda 'return id(shutdown_threshold_w).state;'
-      then:
-        - logger.log: "Charge complete: Power is below manual threshold. Turning off."
-        - switch.turn_off: relay
 
 wifi:
   ssid: !secret wifi_ssid
@@ -79,36 +61,61 @@ uart:
   baud_rate: 4800
   parity: EVEN
 
+# This script manages the 60-second stabilization period.
+script:
+  - id: start_charge_sequence
+    mode: single # Ensures only one instance of this script can run at a time.
+    then:
+      - globals.set:
+          id: is_stabilizing
+          value: 'true'
+      - logger.log: "Charger ON. Stabilization period started (1 minute)."
+      - delay: 120s
+      - globals.set:
+          id: is_stabilizing
+          value: 'false'
+      - logger.log: "Stabilization period ended. Power monitoring is now active."
+
 # ---------------------------------------------------
 # --- SENSORS & INPUTS
 # ---------------------------------------------------
 
-# User-configurable values that will show up as sliders/boxes in Home Assistant
+# User-configurable values that will show up as sliders/boxes in Home Assistant/ESPHome UI
 number:
   - platform: template
     id: shutdown_threshold_w
     name: "Manual Shutdown Threshold"
+    optimistic: true
     min_value: 0
     max_value: 500 # Adjust based on your charger's max power
     step: 1.0
     unit_of_measurement: "W"
     icon: "mdi:power-plug-off"
+  # --- These number inputs now read from and write to the persistent globals ---
   - platform: template
-    id: battery_nominal_voltage
     name: "Battery Nominal Voltage"
+    icon: "mdi:bike"
+    unit_of_measurement: "V"
     min_value: 12
     max_value: 84
     step: 0.1
-    unit_of_measurement: "V"
-    icon: "mdi:bike"
+    lambda: 'return id(battery_nominal_voltage_g);'
+    set_action:
+      - globals.set:
+          id: battery_nominal_voltage_g
+          value: !lambda 'return x;'
   - platform: template
-    id: battery_capacity_ah
     name: "Battery Capacity"
+    icon: "mdi:battery-plus"
+    unit_of_measurement: "Ah"
     min_value: 1
     max_value: 50
     step: 0.1
-    unit_of_measurement: "Ah"
-    icon: "mdi:battery-plus"
+    lambda: 'return id(battery_capacity_ah_g);'
+    set_action:
+      - globals.set:
+          id: battery_capacity_ah_g
+          value: !lambda 'return x;'
 
 sensor:
   # Power Monitoring Sensor
@@ -117,9 +124,42 @@ sensor:
       name: "${device_name} Power"
       accuracy_decimals: 2
       id: power
-      # We send updates frequently to catch the peak power accurately.
       filters:
         - throttle_average: 5s
+      on_value:
+        - if:
+            condition:
+              and:
+                - switch.is_on: relay
+                - lambda: 'return !id(is_stabilizing);'
+                - lambda: 'return id(power).state > 10.0;'
+            then:
+              - if:
+                  condition:
+                    lambda: 'return id(power).state > id(peak_power_learned);'
+                  then:
+                    - globals.set:
+                        id: peak_power_learned
+                        value: !lambda 'return id(power).state;'
+                    - logger.log: "New peak power learned."
+              - if:
+                  condition:
+                    and:
+                      - lambda: 'return id(peak_power_learned) > 30.0;'
+                      - lambda: 'return id(power).state < (id(peak_power_learned) * 0.85);'
+                  then:
+                    - logger.log: "Charge complete: Power draw has decreased. Turning off."
+                    - switch.turn_off: relay
+        - if:
+            condition:
+              and:
+                - switch.is_on: relay
+                - lambda: 'return !id(is_stabilizing);'
+                - lambda: 'return id(shutdown_threshold_w).state > 0;'
+                - lambda: 'return id(power).state < id(shutdown_threshold_w).state;'
+            then:
+              - logger.log: "Charge complete: Power is below manual threshold. Turning off."
+              - switch.turn_off: relay
     voltage:
       name: "${device_name} Voltage"
       accuracy_decimals: 2
@@ -131,7 +171,6 @@ sensor:
       id: total_energy
       accuracy_decimals: 3
 
-  # This sensor displays the learned peak power. It's useful for debugging.
   - platform: template
     name: "Learned Peak Power"
     id: learned_peak_power_sensor
@@ -140,40 +179,30 @@ sensor:
     icon: "mdi:chart-line-variant"
     update_interval: 15s
 
-  # This template sensor calculates the estimated battery percentage.
   - platform: template
-    name: "${device_name} Estimated Battery Charge"
-    id: battery_level
-    device_class: battery
-    unit_of_measurement: "%"
+    name: "Energy Added This Session"
+    id: energy_added_this_session
+    unit_of_measurement: "Wh"
     accuracy_decimals: 1
-    icon: "mdi:battery-charging"
-    update_interval: 30s
+    icon: "mdi:flash"
+    update_interval: 15s
     lambda: |-
-      // We need valid user inputs to perform the calculation.
-      if (id(battery_nominal_voltage).state == 0 || id(battery_capacity_ah).state == 0) {
-        return NAN; // Return Not-a-Number if inputs aren't set
-      }
-
-      // 1. Calculate the total capacity of the battery in Watt-hours (Wh).
-      float total_wh = id(battery_nominal_voltage).state * id(battery_capacity_ah).state;
-
-      // 2. Get the energy consumed during this specific charge session.
-      //    This uses a variable 'charge_session_energy' that is set when the relay turns on.
-      float energy_this_session_wh = (id(total_energy).state - id(charge_session_start_energy)) * 1000;
-
-      // 3. Assume a charger efficiency (e.g., 90%). Not all power from the wall goes into the battery.
-      float efficiency = 0.90;
-      float energy_into_battery_wh = energy_this_session_wh * efficiency;
-
-      // 4. Calculate the percentage.
-      if (total_wh > 0) {
-        float percentage = (energy_into_battery_wh / total_wh) * 100.0;
-        // Clamp the value between 0 and 100 so it doesn't show >100%.
-        return fmin(100.0, fmax(0.0, percentage));
+      if (id(relay).state) {
+        float energy_kwh = id(total_energy).state - id(charge_session_start_energy);
+        return energy_kwh * 1000.0;
       } else {
         return 0.0;
       }
+
+  # --- New sensor to display the percentage added during the last completed session ---
+  - platform: template
+    name: "Percentage Added Last Session"
+    id: percentage_added_last_session
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    icon: "mdi:battery-arrow-up"
+    lambda: 'return id(last_session_percentage_added);'
+
 
 binary_sensor:
   - platform: gpio
@@ -186,7 +215,6 @@ binary_sensor:
       - switch.toggle: relay
   - platform: status
     name: "${device_name} Status"
-  # This sensor simply reflects if the main relay is on or off.
   - platform: template
     name: "E-Bike Charging"
     id: charging_status
@@ -198,27 +226,39 @@ binary_sensor:
 # ---------------------------------------------------
 
 switch:
-  # The main relay that controls the outlet.
   - platform: gpio
     name: "${device_name} Relay"
     pin: GPIO12
     id: relay
     restore_mode: RESTORE_DEFAULT_OFF
-    # When the relay is turned ON...
     on_turn_on:
-      # We record the current total energy. This marks the start of a new charging session
-      # for the battery percentage calculation.
       - globals.set:
           id: charge_session_start_energy
           value: !lambda 'return id(total_energy).state;'
-      - logger.log: "Charger turned ON. Starting new charge session."
+      - script.execute: start_charge_sequence
     # When the relay is turned OFF...
     on_turn_off:
       - logger.log: "Charger turned OFF."
+      - script.stop: start_charge_sequence
+      - globals.set:
+          id: is_stabilizing
+          value: 'false'
+      # --- New action to calculate and store the percentage added ---
+      - lambda: |-
+          float total_wh = id(battery_nominal_voltage_g) * id(battery_capacity_ah_g);
+          if (total_wh > 0) {
+            float energy_this_session_kwh = id(total_energy).state - id(charge_session_start_energy);
+            float energy_this_session_wh = energy_this_session_kwh * 1000.0;
+            
+            // Assume 90% charger efficiency
+            float energy_into_battery_wh = energy_this_session_wh * 0.90;
 
+            float percentage = (energy_into_battery_wh / total_wh) * 100.0;
+            id(last_session_percentage_added) = fmin(100.0, fmax(0.0, percentage));
+          } else {
+            id(last_session_percentage_added) = 0.0;
+          }
 
-  # This is a virtual "button" to reset the learned peak power.
-  # Turn it ON in Home Assistant, and it will automatically turn OFF.
   - platform: template
     name: "Reset Peak Power"
     id: reset_peak_power
@@ -229,23 +269,9 @@ switch:
       - globals.set:
           id: peak_power_learned
           value: '0.0'
-      # This makes it a momentary switch.
       - delay: 1s
       - switch.turn_off: reset_peak_power
 
-# We need another global for the battery percentage calculation.
-# This stores the value of the energy meter when a charge cycle begins.
-globals:
-  - id: charge_session_start_energy
-    type: float
-    restore_value: yes
-    initial_value: '0.0'
-  - id: peak_power_learned
-    type: float
-    restore_value: yes
-    initial_value: '0.0'
-
-# Standard status LED.
 status_led:
   pin:
     number: GPIO13

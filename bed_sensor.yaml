@@ -32,10 +32,10 @@ sensor:
     update_interval: 5s
     filters:
       - calibrate_linear:
-        - 46800 -> 0
+        - 46000 -> 0
         - 58527 -> 130
       - lambda: |-
-          if (x < 0.0) return NAN;
+          if (x < -50.0) return NAN;
           return x;
       - sliding_window_moving_average:
           window_size: 6

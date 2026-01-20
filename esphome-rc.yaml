@@ -6,14 +6,17 @@ esphome:
   name: ${device_name}
 esp32:
   board: lolin_c3_mini
+  framework:
+    type: esp-idf    
 
 ota:
   platform: esphome
 
+
 api:
 
 logger:
-  level: DEBUG
+  level: INFO
   baud_rate: 0 # (No need for UART logging)
 
 
@@ -28,6 +31,8 @@ mqtt:
   broker: !secret mqtt_broker_ip
   id: mqtt_client
 
+bluetooth_proxy:
+
 remote_receiver:
   pin:
     number: GPIO6
@@ -40,8 +45,8 @@ remote_receiver:
   tolerance: 60%
   filter: 250us
   idle: 4ms
-  rmt_channel: 2
-  buffer_size: 2048
+    #  rmt_channel: 2
+    #  buffer_size: 2048
   on_rc_switch:
     - lambda: !lambda |-
         char code[21];

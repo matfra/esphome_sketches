@@ -5,7 +5,7 @@ esphome:
 esp32:
   board: esp32-s3-devkitc-1
   framework:
-    type: esp-idf
+    type: arduino # Changed from esp-idf for hub75 display compatibility
 
 # Enable logging
 logger:
@@ -21,6 +21,26 @@ wifi:
 ota:
   platform: esphome
   password: !secret ota_password
+
+font:
+  - file: "gfonts://Roboto"
+    id: my_font
+    size: 12
+
+spi:
+  - id: spi_bus_display
+    clk_pin: 16
+    mosi_pin: 15
+
+display:
+  - platform: ssd1351_spi
+    model: "SSD1351_128X128"
+    spi_id: spi_bus_display
+    cs_pin: 18
+    dc_pin: 19
+    reset_pin: 21
+    lambda: |-
+      it.print(0, 0, id(my_font), "Hello again!");
 
 button:
   - platform: restart
