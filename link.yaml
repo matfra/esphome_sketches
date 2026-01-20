@@ -1,11 +1,20 @@
 esphome:
   name: link
   friendly_name: link
+  on_boot:
+    priority: -100.0
+    then:
+      - lambda: |-
+          ESP_LOGD("custom", "Sending 0x11 (Sleep Out) command to display");
+          id(my_oled_display).command(0x11);
+  platformio_options:
+    build_flags:
+      - "-Dprotected=public"
 
 esp32:
   board: esp32-s3-devkitc-1
   framework:
-    type: arduino # Changed from esp-idf for hub75 display compatibility
+    type: arduino # REQUIRED for SSD1351 display
 
 # Enable logging
 logger:
@@ -29,16 +38,18 @@ font:
 
 spi:
   - id: spi_bus_display
-    clk_pin: 16
-    mosi_pin: 15
+    clk_pin: 7
+    mosi_pin: 8
 
 display:
   - platform: ssd1351_spi
+    id: my_oled_display
     model: "SSD1351_128X128"
     spi_id: spi_bus_display
-    cs_pin: 18
-    dc_pin: 19
-    reset_pin: 21
+    cs_pin: 6
+    dc_pin: 5
+    reset_pin: 4
+    brightness: 100%
     lambda: |-
       it.print(0, 0, id(my_font), "Hello again!");
 
